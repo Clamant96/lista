@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lista de compras</title>
+<style>
+  :root { color-scheme: light dark; --bg:#fafaf7; --card:#fff; --text:#1f2a24; --muted:#6b7a72; --accent:#2f7d4f; --line:#e6e8e3; --danger:#c0392b; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#141916; --card:#1c231f; --text:#e8eee9; --muted:#8fa096; --accent:#5cc58a; --line:#2b3530; --danger:#ef7b6e; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:16px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif; padding:16px 16px 90px; max-width:560px; margin-inline:auto; }
+  header { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:8px 0 4px; }
+  h1 { font-size:22px; margin:0; }
+  .progress { color:var(--muted); font-size:14px; margin-bottom:8px; }
+  .bar { height:6px; background:var(--line); border-radius:3px; overflow:hidden; margin-bottom:16px; }
+  .bar > div { height:100%; width:0; background:var(--accent); transition:width .2s; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:12px; margin-bottom:12px; overflow:hidden; }
+  .cat-head { display:flex; align-items:center; gap:8px; padding:10px 14px 6px; }
+  h2 { font-size:14px; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); margin:0; font-weight:600; flex:1; }
+  .row { display:flex; align-items:center; gap:10px; padding:10px 14px; border-top:1px solid var(--line); min-height:48px; }
+  label.row { cursor:pointer; }
+  input[type=checkbox] { width:22px; height:22px; accent-color:var(--accent); flex:none; }
+  .name { flex:1; }
+  .qty { color:var(--muted); font-size:14px; white-space:nowrap; }
+  .line { text-align:right; min-width:78px; font-size:14px; white-space:nowrap; }
+  input[type=checkbox]:checked ~ .name, input[type=checkbox]:checked ~ .qty, input[type=checkbox]:checked ~ .line { text-decoration:line-through; opacity:.5; }
+  input[type=text] { font:inherit; color:var(--text); background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:8px 10px; min-width:0; }
+  input[type=text]:focus { outline:2px solid var(--accent); outline-offset:-1px; }
+  .row.edit { flex-wrap:wrap; }
+  .in-name { flex:1 1 100%; }
+  .in-qty { width:80px; text-align:center; }
+  .in-price { width:110px; }
+  .spacer { flex:1; }
+  .sub { color:var(--muted); font-size:13px; white-space:nowrap; }
+  .price-info { display:block; font-size:12px; color:var(--muted); }
+  .total { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px 14px; margin-bottom:16px; display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+  .total b { font-size:18px; display:block; }
+  .total span { color:var(--muted); font-size:13px; }
+  .in-cat { flex:1; font-weight:600; text-transform:uppercase; letter-spacing:.04em; font-size:14px; }
+  button { background:none; border:1px solid var(--line); color:var(--muted); border-radius:8px; padding:8px 14px; font:inherit; font-size:14px; cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button.icon { padding:8px 10px; line-height:1; flex:none; }
+  button.del { color:var(--danger); }
+  button.add { width:100%; border:0; border-top:1px solid var(--line); border-radius:0; padding:12px; color:var(--accent); text-align:left; }
+  .footer { display:flex; gap:8px; flex-wrap:wrap; }
+  .toast { position:fixed; left:50%; bottom:20px; transform:translateX(-50%); background:var(--text); color:var(--bg); padding:10px 14px; border-radius:10px; display:none; align-items:center; gap:12px; font-size:14px; box-shadow:0 4px 16px rgba(0,0,0,.25); }
+  .toast button { background:none; border:0; color:var(--accent); font-weight:600; padding:0; }
+  .empty { padding:14px; color:var(--muted); font-size:14px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🛒 Lista de compras</h1>
+  <button id="toggle">✏️ Editar</button>
+</header>
+<div class="total" id="total"></div>
+<div class="progress" id="progress"></div>
+<div class="bar"><div id="fill"></div></div>
+<div id="list"></div>
+<div class="footer" id="footer"></div>
+<div class="toast" id="toast"><span id="toastMsg"></span><button id="undo">Desfazer</button></div>
+
+<script>
+const KEY = "lista-compras-v2";
+let uid = 0;
+const nid = () => "i" + Date.now().toString(36) + (uid++);
+const mk = (name, items) => ({ id: nid(), name, items: items.map(([n, q]) => ({ id: nid(), name: n, qty: q, done: false })) });
+
+const defaults = () => [
+  mk("🥫 Mercearia", [["Feijão preto","1x"],["Molho de tomate","3x"],["Café","1x"],["Sal","1x"],["Açúcar","1x"],["Vinagre","1x"],["Óleo (se estiver barato)","1x"],["Maionese barata","1x"],["Leite condensado","2x"],["Creme de leite","1x"]]),
+  mk("🥬 Hortifruti", [["Alho","3x"]]),
+  mk("🥛 Laticínios e frios", [["Leite","2x"],["Margarina grande","1x"],["Requeijão","1x"]]),
+  mk("🥩 Carnes e embutidos", [["Carne moída","500g"],["Carne de porco (peça)","1x"],["Calabresa","2x"]]),
+  mk("🍞 Padaria e biscoitos", [["Pão de forma","2x"],["Bolacha salgada","1x"],["Bolacha doce","1x"]]),
+  mk("🥤 Bebidas", [["Refrigerante da Momo (fardo)","1x"]]),
+  mk("🧽 Limpeza", [["Detergente","3x"],["Detergente de banheiro","1x"],["Sabão líquido","1x"],["Sabão em pedra","1x"],["Álcool","1x"],["Saco de lixo","1x"]]),
+  mk("🦟 Dedetização", [["Refil veneno de pernilongo","2x"],["Veneno spray","1x"]]),
+  mk("🛍️ Descartáveis", [["Saco plástico (se estiver barato)","1x"]])
+];
+
+let cats;
+try { cats = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
+if (!Array.isArray(cats)) cats = defaults();
+
+let editing = false;
+let lastSnapshot = null, toastTimer = null;
+
+const $ = id => document.getElementById(id);
+function save() { try { localStorage.setItem(KEY, JSON.stringify(cats)); } catch (e) {} }
+function snapshot(msg) {
+  lastSnapshot = JSON.stringify(cats);
+  $("toastMsg").textContent = msg;
+  $("toast").style.display = "flex";
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { $("toast").style.display = "none"; }, 6000);
+}
+$("undo").addEventListener("click", () => {
+  if (!lastSnapshot) return;
+  cats = JSON.parse(lastSnapshot); lastSnapshot = null;
+  $("toast").style.display = "none"; save(); render();
+});
+
+function el(tag, attrs = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") e.className = v;
+    else if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
+    else if (k in e) e[k] = v; else e.setAttribute(k, v);
+  }
+  kids.forEach(k => e.append(k));
+  return e;
+}
+
+const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
+function num(str) {
+  const m = String(str || "").replace(",", ".").match(/-?\d+(\.\d+)?/);
+  return m ? parseFloat(m[0]) : NaN;
+}
+// quantidade: "3x" -> 3; "500g" -> 0,5 (preço por kg); "2kg" -> 2
+function qtyValue(q) {
+  const n = num(q);
+  if (isNaN(n)) return 1;
+  return /\d\s*g\s*$/i.test(String(q).trim()) && !/kg\s*$/i.test(String(q).trim()) ? n / 1000 : n;
+}
+function lineTotal(it) {
+  const p = num(it.price);
+  return isNaN(p) ? 0 : p * qtyValue(it.qty);
+}
+function updateTotals() {
+  const all = cats.flatMap(c => c.items);
+  const total = all.reduce((a, i) => a + lineTotal(i), 0);
+  const cart = all.filter(i => i.done).reduce((a, i) => a + lineTotal(i), 0);
+  const t = $("total"); t.replaceChildren();
+  t.append(el("div", {}, el("span", { textContent: "Total da lista" }), el("b", { textContent: brl.format(total) })));
+  t.append(el("div", {}, el("span", { textContent: "No carrinho" }), el("b", { textContent: brl.format(cart) })));
+  document.querySelectorAll("[data-sub]").forEach(n => {
+    const c = cats.find(x => x.id === n.dataset.sub);
+    if (c) n.textContent = brl.format(c.items.reduce((a, i) => a + lineTotal(i), 0));
+  });
+  document.querySelectorAll("[data-line]").forEach(n => {
+    for (const c of cats) { const it = c.items.find(x => x.id === n.dataset.line); if (it) { n.firstChild.textContent = isNaN(num(it.price)) ? "" : brl.format(lineTotal(it)); } }
+  });
+}
+function updateProgress() {
+  updateTotals();
+  const items = cats.flatMap(c => c.items);
+  const done = items.filter(i => i.done).length;
+  $("progress").textContent = items.length ? done + " de " + items.length + " itens" : "Nenhum item";
+  $("fill").style.width = items.length ? (100 * done / items.length) + "%" : "0%";
+}
+
+function render() {
+  const list = $("list"); list.replaceChildren();
+  $("toggle").textContent = editing ? "✅ Concluir" : "✏️ Editar";
+  $("toggle").className = editing ? "primary" : "";
+
+  cats.forEach(cat => {
+    const s = el("section");
+    if (editing) {
+      s.append(el("div", { class: "cat-head" },
+        el("input", { type: "text", class: "in-cat", value: cat.name, "aria-label": "Nome da categoria", oninput: e => { cat.name = e.target.value; save(); } }),
+        el("button", { class: "icon del", title: "Excluir categoria", "aria-label": "Excluir categoria", textContent: "🗑️", onclick: () => {
+          snapshot("Categoria excluída");
+          cats = cats.filter(c => c.id !== cat.id); save(); render();
+        } })
+      ));
+      cat.items.forEach(it => {
+        s.append(el("div", { class: "row edit" },
+          el("input", { type: "text", class: "in-name", value: it.name, placeholder: "Item", "aria-label": "Nome do item", oninput: e => { it.name = e.target.value; save(); } }),
+          el("input", { type: "text", class: "in-qty", value: it.qty, placeholder: "Qtd", inputMode: "decimal", "aria-label": "Quantidade", oninput: e => { it.qty = e.target.value; save(); updateTotals(); } }),
+          el("input", { type: "text", class: "in-price", value: it.price || "", placeholder: "Preço R$", inputMode: "decimal", "aria-label": "Preço unitário (por unidade ou por kg)", oninput: e => { it.price = e.target.value; save(); updateTotals(); } }),
+          el("span", { class: "spacer" }),
+          el("button", { class: "icon del", title: "Remover item", "aria-label": "Remover item", textContent: "✕", onclick: () => {
+            snapshot("Item removido");
+            cat.items = cat.items.filter(x => x.id !== it.id); save(); render();
+          } })
+        ));
+      });
+      s.append(el("button", { class: "add", textContent: "+ Adicionar item", onclick: () => {
+        cat.items.push({ id: nid(), name: "", qty: "1x", price: "", done: false }); save(); render();
+        const ins = $("list").querySelectorAll("section");
+        const idx = cats.indexOf(cat);
+        const rows = ins[idx].querySelectorAll(".in-name"); rows[rows.length - 1].focus();
+      } }));
+    } else {
+      s.append(el("div", { class: "cat-head" }, el("h2", { textContent: cat.name }), el("span", { class: "sub", "data-sub": cat.id })));
+      if (!cat.items.length) s.append(el("div", { class: "empty", textContent: "Sem itens. Toque em Editar para adicionar." }));
+      cat.items.forEach(it => {
+        s.append(el("label", { class: "row" },
+          el("input", { type: "checkbox", checked: it.done, onchange: e => { it.done = e.target.checked; save(); updateProgress(); } }),
+          el("span", { class: "name", textContent: it.name || "(sem nome)" }),
+          el("span", { class: "qty", textContent: it.qty }),
+          el("span", { class: "line", "data-line": it.id }, document.createTextNode(""),
+            el("span", { class: "price-info", textContent: num(it.price) >= 0 ? brl.format(num(it.price)) + (/\d\s*g\s*$/i.test(String(it.qty).trim()) && !/kg\s*$/i.test(String(it.qty).trim()) ? "/kg" : "") + " cada" : "" }))
+        ));
+      });
+    }
+    list.append(s);
+  });
+
+  const f = $("footer"); f.replaceChildren();
+  if (editing) {
+    f.append(el("button", { textContent: "+ Nova categoria", onclick: () => {
+      cats.push({ id: nid(), name: "Nova categoria", items: [] }); save(); render();
+      const ins = $("list").querySelectorAll(".in-cat"); const last = ins[ins.length - 1]; last.focus(); last.select();
+    } }));
+  } else {
+    f.append(el("button", { textContent: "Desmarcar tudo", onclick: () => {
+      cats.forEach(c => c.items.forEach(i => i.done = false)); save(); render();
+    } }));
+  }
+  updateProgress();
+}
+
+$("toggle").addEventListener("click", () => { editing = !editing; render(); });
+render();
+</script>
+</body>
+</html>
